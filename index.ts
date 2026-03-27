@@ -2,9 +2,11 @@ import { readFileSync } from "fs";
 import http from "http";
 import path from "path";
 
+const BASE_URL = process.env.APP_URL ?? "http://localhost:3000";
+
 const data = JSON.parse(
   readFileSync(path.join(import.meta.dirname, "data", "data.json"), "utf-8"),
-);
+) as ProductType[];
 
 const overviewPage = readFileSync(
   path.join(import.meta.dirname, "views", "overview", "overview.html"),
@@ -22,7 +24,7 @@ const productPage = readFileSync(
 );
 
 const productCSS = readFileSync(
-  path.join(import.meta.dirname, "views", "product", "product.html"),
+  path.join(import.meta.dirname, "views", "product", "styles.css"),
   "utf-8",
 );
 
@@ -32,7 +34,7 @@ const card = readFileSync(
 );
 
 type ProductType = {
-  id: string;
+  id: number;
   productName: string;
   image: string;
   from: string;
@@ -44,19 +46,6 @@ type ProductType = {
 };
 
 const replaceTemplate = function (template: string, product: ProductType) {
-  /*
-    {%PRODUCT_NAME%}
-    {%PRODUCT_EMOJI%}
-    {%IS_PRODUCT_ORGANIC%}
-    {%PRODUCT_FROM%}
-    {%PRODUCT_NUTRIENTS%}
-    {%PRODUCT_QUANTITY%}
-    {%PRODUCT_PRICE%}
-    {%PRODUCT_DESC%}
-    {%PRODUCT_URL%}
-    {%PRODUCT_CARD%}
-*/
-
   return template
     .replaceAll("{%PRODUCT_NAME%}", product.productName)
     .replaceAll("{%PRODUCT_EMOJI%}", product.image)
@@ -66,10 +55,7 @@ const replaceTemplate = function (template: string, product: ProductType) {
     .replaceAll("{%PRODUCT_QUANTITY%}", product.quantity)
     .replaceAll("{%PRODUCT_PRICE%}", product.price)
     .replaceAll("{%PRODUCT_DESC%}", product.description)
-    .replaceAll(
-      "{%PRODUCT_URL%}",
-      `${process.env.APP_URL ?? "localhost:3000"}/product/${product.id}`,
-    );
+    .replaceAll("{%PRODUCT_URL%}", `/product?id=${product.id}`);
 };
 
 const replaceCard = function (template: string, products: ProductType[]) {
@@ -80,8 +66,39 @@ const replaceCard = function (template: string, products: ProductType[]) {
 };
 
 const server = http.createServer((req, res) => {
-  if (req.method === "GET" && ["/", "/overview"].includes(req.url!)) {
+  // HANDLING CSS FILES
+  const { pathname, searchParams } = URL.parse(req.url!, BASE_URL)!;
+
+  if (
+    req.method === "GET" &&
+    ["/product/styles.css", "/overview/styles.css"].includes(pathname)
+  )
+    return res
+      .writeHead(200, { "content-type": "text/css" })
+      .end(req.url === "/product/styles.css" ? productCSS : overviewCSS);
+
+  if (req.method === "GET" && ["/", "/overview"].includes(pathname))
+    return res
+      .writeHead(200, { "content-type": "text/html" })
+      .end(replaceCard(overviewPage, data));
+
+  if (req.method === "GET" && pathname === "/product") {
+    const productID = searchParams.get("id")!;
+    const product = data.find((product) => product.id === +productID);
+
+    if (!product)
+      return res
+        .writeHead(404, { "content-type": "text/html" })
+        .end("<h1>Product Not Found</h1>");
+
+    return res
+      .writeHead(200, { "content-type": "text/html" })
+      .end(replaceTemplate(productPage, product));
   }
+
+  res
+    .writeHead(404, { "content-type": "text/html" })
+    .end("<h1>Page not found</h1>");
 });
 
 server.listen(3000, () => {
